@@ -1,22 +1,23 @@
+from random import choice
+import signal
 import socket
 import sys
 import threading
-import signal
 from functools import partial
 
 HOST = "localhost"
 PORT = 1235
 BUFF_SIZE = 1024
-ROOM_SIZE = 3
+ROOM_SIZE = 2
 
 
 def signal_handler(
-    data: socket.socket,
+    server: socket.socket,
     sig,
     frame,
 ):
     print("\nClosing server ")
-    data.close()
+    server.close()
     sys.exit(1)
 
 
@@ -27,39 +28,52 @@ class Room:
 
     def wait_data(self, connection: socket.socket):
         while True:
-            data = connection.recv(BUFF_SIZE)
+            try:
+                data = connection.recv(BUFF_SIZE)
+            except ConnectionResetError:
+                self.remove_connection(connection)
+                connection.close()
+                break
+            if data == b"DISCONNECT":
+                connection.send(b"bye")
+                self.remove_connection(connection)
+                connection.close()
+                break
             if data:
                 self.broadcast(data, connection)
                 print(data)
             else:
                 self.remove_connection(connection)
                 break
-
     def remove_connection(self, conn):
         index = -1
         for i, values in enumerate(self.all_connections):
             connection, _ = values
             if connection == conn:
-                index = i 
+                index = i
         if index != -1:
-            self.all_connections.pop
+            self.all_connections.pop(index)
+        print("ALL",self.all_connections)
+
     def broadcast(self, data, connection):
-        for index, values in enumerate(self.all_connections):
-            _conn, _ = values
+        for _conn, _ in self.all_connections:
             if _conn != connection:
-                data_copy = f'{index},{data}'
-                _conn.send(data_copy.encode())
+                try:
+                    _conn.send(data)
+                except ConnectionAbortedError:
+                    self.remove_connection(_conn)
 
     def start_listen(self):
         _conn: socket.socket
-        for _conn, addr in self.all_connections:
-            print(f"Wait data from {addr}")
-            _conn.send(b"START")
+        impostor,testasd = choice(self.all_connections)
+        print(impostor,testasd)
+        for index, (_conn, addr) in enumerate(self.all_connections):
+            print(f"Wait data from {dir(addr)}")
+            _conn.send(f"{index},{ROOM_SIZE}".encode())
             threading.Thread(target=self.wait_data, args=(_conn,)).start()
 
 
-#TODO: Add id to connections
-#TODO: in first message send if are impostor
+# TODO: in first message send if are impostor
 
 if __name__ == "__main__":
     server = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
