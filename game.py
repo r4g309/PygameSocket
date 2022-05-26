@@ -8,13 +8,14 @@ from math import sqrt
 
 import pygame
 
-HEIGTH, WIDTH = 800, 800
+HEIGTH, WIDTH = 200, 200
 FPS = 60
 SIZE = 10
-SPEED = 10
+SPEED = 5
 IP = "172.30.16.199"
 PORT = 1235
 RUN = True
+INVULNERABLE_TIME = 5
 
 
 def signal_handler(
@@ -31,6 +32,8 @@ def signal_handler(
 class Player(pygame.sprite.Sprite):
     def __init__(self, is_killer, is_player=False):
         super().__init__()
+        self.time = 0
+        self.is_killer = is_killer
         self.surf = pygame.Surface((SIZE, SIZE))
         if is_killer:
             color = (255, 0, 0)
@@ -44,6 +47,8 @@ class Player(pygame.sprite.Sprite):
         self.rect.y = HEIGTH // 2
 
     def move(self, client, id_client):
+        if self.time > 0:
+            self.time -= 0.1
         pressed_keys = pygame.key.get_pressed()
         if pygame.KEYDOWN:
             send = False
@@ -68,27 +73,36 @@ class Player(pygame.sprite.Sprite):
             if x != 0 and y != 0:
                 x = x * (sqrt(2) / 2)
                 y = y * (sqrt(2) / 2)
-            if self.rect.x > WIDTH:
-                self.rect.x = 0
-            if self.rect.x < 0:
-                self.rect.x = WIDTH
 
-            if self.rect.y > HEIGTH:
-                self.rect.y = 0
-            if self.rect.y < 0:
-                self.rect.y = HEIGTH
+            if self.rect.x > WIDTH:  # type: ignore
+                self.rect.x = 0  # type: ignore
+            if self.rect.x < 0:  # type: ignore
+                self.rect.x = WIDTH  # type: ignore
 
-            self.rect.x += x
-            self.rect.y += y
+            if self.rect.y > HEIGTH:  # type: ignore
+                self.rect.y = 0  # type: ignore
+            if self.rect.y < 0:  # type: ignore
+                self.rect.y = HEIGTH  # type: ignore
+
+            self.rect.x += x  # type: ignore
+            self.rect.y += y  # type: ignore
             if send:
                 client.send(
                     bytes(
                         dumps(
-                            {"id_client": id_client, "x": self.rect.x, "y": self.rect.y}
+                            {"id_client": id_client, "x": self.rect.x, "y": self.rect.y, "change": False, "new": -1}  # type: ignore
                         ),
                         encoding="utf-8",
                     )
                 )
+
+    def new_killer(self):
+        self.surf.fill((255, 0, 0))
+        self.is_killer = True
+
+    def new_player(self):
+        self.surf.fill((32, 252, 3))
+        self.time = INVULNERABLE_TIME
 
 
 def recv_data(conn: socket.socket, all_sprites, id_user):
@@ -101,7 +115,15 @@ def recv_data(conn: socket.socket, all_sprites, id_user):
                 data = loads(data.decode("utf-8"))
             except JSONDecodeError:
                 continue
-            id_conn, pox, posy = data["id_client"], data["x"], data["y"]
+            id_conn, pox, posy, change_killer, new_killer = (
+                data["id_client"],
+                data["x"],
+                data["y"],
+                data["change"],
+                data["new"],
+            )
+            if change_killer:
+                all_sprites[new_killer].new_killer()
             if id_conn != id_user:
                 user = all_sprites[id_conn]
                 user.rect.x = pox
@@ -123,6 +145,10 @@ def main(client, data):
 
     clock = pygame.time.Clock()
     window = pygame.display.set_mode((WIDTH, HEIGTH))
+    if is_killer:
+        pygame.display.set_caption(f"Killer{id_user}")
+    else:
+        pygame.display.set_caption(f"Innocent{id_user}")
 
     all_sprites = []
     p1 = Player(is_killer, True)
@@ -138,7 +164,7 @@ def main(client, data):
             all_sprites.append(p1)
 
     threading.Thread(target=recv_data, args=(client, all_sprites, id_user)).start()
-    posx,posy = 0,0
+    posx, posy = 0, 0
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -152,10 +178,32 @@ def main(client, data):
         p1.move(client, id_user)
         for entity in all_sprites:
             if entity is p1:
-                posx,posy = entity.rect.x,entity.rect.y
+                posx, posy = entity.rect.x, entity.rect.y
             else:
-                pygame.draw.line(window,(255,255,255),(posx,posy),(entity.rect.x,entity.rect.y),3)
-            
+                pygame.draw.line(
+                    window,
+                    (255, 255, 255),
+                    (posx, posy),
+                    (entity.rect.x, entity.rect.y),
+                    3,
+                )
+
+            print("USER ID", id_user, "ID_KILLER", id_killer)
+            if entity is not p1:
+                if pygame.sprite.collide_rect(p1, entity) and p1.is_killer:
+                    # Enviar datos del nuevo killer
+                    client.send(
+                        bytes(
+                            dumps(
+                                {
+                                    "id_client":id_user, "x":p1.rect.x, "y":p1.rect.y, "change":True, "new": all_sprites.index(entity)  # type: ignore
+                                }
+                            ),
+                            encoding="utf-8",
+                        )
+                    )
+                    p1.new_player()
+
             window.blit(entity.surf, entity.rect)
         pygame.display.update()
         clock.tick(FPS)
