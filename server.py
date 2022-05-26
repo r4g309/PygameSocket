@@ -1,12 +1,12 @@
-from random import choice
 import signal
 import socket
 import sys
 import threading
 from functools import partial
-from json import loads, dumps
+from json import dumps, loads
+from random import choice
 
-HOST = "localhost"
+HOST = "172.30.16.199"
 PORT = 1235
 BUFF_SIZE = 1024
 ROOM_SIZE = 2

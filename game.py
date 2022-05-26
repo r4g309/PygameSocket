@@ -3,16 +3,16 @@ import socket
 import sys
 import threading
 from functools import partial
+from json import JSONDecodeError, dumps, loads
 from math import sqrt
-from json import loads, dumps
 
 import pygame
 
-HEIGTH, WIDTH = 300, 300
+HEIGTH, WIDTH = 800, 800
 FPS = 60
 SIZE = 10
 SPEED = 10
-IP = "localhost"
+IP = "172.30.16.199"
 PORT = 1235
 RUN = True
 
@@ -68,6 +68,16 @@ class Player(pygame.sprite.Sprite):
             if x != 0 and y != 0:
                 x = x * (sqrt(2) / 2)
                 y = y * (sqrt(2) / 2)
+            if self.rect.x > WIDTH:
+                self.rect.x = 0
+            if self.rect.x < 0:
+                self.rect.x = WIDTH
+
+            if self.rect.y > HEIGTH:
+                self.rect.y = 0
+            if self.rect.y < 0:
+                self.rect.y = HEIGTH
+
             self.rect.x += x
             self.rect.y += y
             if send:
@@ -87,7 +97,10 @@ def recv_data(conn: socket.socket, all_sprites, id_user):
         if data == b"bye":
             break
         if data:
-            data = loads(data.decode("utf-8"))
+            try:
+                data = loads(data.decode("utf-8"))
+            except JSONDecodeError:
+                continue
             id_conn, pox, posy = data["id_client"], data["x"], data["y"]
             if id_conn != id_user:
                 user = all_sprites[id_conn]
@@ -152,5 +165,9 @@ if __name__ == "__main__":
         sys.exit(1)
 
     print("Waiting to server...")
-    data = loads(client.recv(1024).decode("utf-8"))
+    try:
+        data = loads(client.recv(1024).decode("utf-8"))
+    except JSONDecodeError:
+        print("Exit")
+        sys.exit(1)
     main(client, data)
