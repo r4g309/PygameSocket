@@ -138,6 +138,7 @@ def main(client, data):
             all_sprites.append(p1)
 
     threading.Thread(target=recv_data, args=(client, all_sprites, id_user)).start()
+    posx,posy = 0,0
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -149,8 +150,12 @@ def main(client, data):
         window.fill((0, 0, 0))
 
         p1.move(client, id_user)
-
         for entity in all_sprites:
+            if entity is p1:
+                posx,posy = entity.rect.x,entity.rect.y
+            else:
+                pygame.draw.line(window,(255,255,255),(posx,posy),(entity.rect.x,entity.rect.y),3)
+            
             window.blit(entity.surf, entity.rect)
         pygame.display.update()
         clock.tick(FPS)
