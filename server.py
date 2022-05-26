@@ -4,6 +4,7 @@ import socket
 import sys
 import threading
 from functools import partial
+from json import loads, dumps
 
 HOST = "localhost"
 PORT = 1235
@@ -41,10 +42,7 @@ class Room:
                 break
             if data:
                 self.broadcast(data, connection)
-                print(data)
-            else:
-                self.remove_connection(connection)
-                break
+
     def remove_connection(self, conn):
         index = -1
         for i, values in enumerate(self.all_connections):
@@ -53,7 +51,6 @@ class Room:
                 index = i
         if index != -1:
             self.all_connections.pop(index)
-        print("ALL",self.all_connections)
 
     def broadcast(self, data, connection):
         for _conn, _ in self.all_connections:
@@ -65,11 +62,25 @@ class Room:
 
     def start_listen(self):
         _conn: socket.socket
-        impostor,testasd = choice(self.all_connections)
-        print(impostor,testasd)
+        impostor = choice(self.all_connections)
+        id_impostor = self.all_connections.index(impostor)
+        impostor, _ = impostor
         for index, (_conn, addr) in enumerate(self.all_connections):
-            print(f"Wait data from {dir(addr)}")
-            _conn.send(f"{index},{ROOM_SIZE}".encode())
+            is_killer = _conn == impostor
+            print(f"Wait data from {addr}")
+            _conn.send(
+                bytes(
+                    dumps(
+                        {
+                            "id": index,
+                            "room_size": ROOM_SIZE,
+                            "killer": is_killer,
+                            "id_killer": id_impostor,
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            )
             threading.Thread(target=self.wait_data, args=(_conn,)).start()
 
 
@@ -94,6 +105,3 @@ if __name__ == "__main__":
         if len(temp_connections) > ROOM_SIZE - 1:
             all_rooms.append(Room(temp_connections))
             temp_connections = []
-
-    # Close connections and server
-    server.close()

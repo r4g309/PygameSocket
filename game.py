@@ -4,8 +4,7 @@ import sys
 import threading
 from functools import partial
 from math import sqrt
-from random import randint
-from xml.sax.handler import all_properties
+from json import loads, dumps
 
 import pygame
 
@@ -23,16 +22,23 @@ def signal_handler(
     sig,
     frame,
 ):
+    client.send("DISCONNECT".encode())
     print("\nClosing server ")
     client.close()
     sys.exit(1)
 
 
 class Player(pygame.sprite.Sprite):
-    def __init__(self):
+    def __init__(self, is_killer, is_player=False):
         super().__init__()
         self.surf = pygame.Surface((SIZE, SIZE))
-        self.surf.fill([randint(0, 255) for _ in range(3)])
+        if is_killer:
+            color = (255, 0, 0)
+        elif is_player:
+            color = (32, 252, 3)
+        else:
+            color = (255, 255, 255)
+        self.surf.fill(color)
         self.rect = self.surf.get_rect()
         self.rect.x = WIDTH // 2
         self.rect.y = HEIGTH // 2
@@ -58,23 +64,31 @@ class Player(pygame.sprite.Sprite):
                 y = -SPEED
             if pressed_keys[pygame.K_DOWN]:
                 y = SPEED
+            # Normalize diagonal
             if x != 0 and y != 0:
                 x = x * (sqrt(2) / 2)
                 y = y * (sqrt(2) / 2)
             self.rect.x += x
             self.rect.y += y
             if send:
-                client.send(f"{id_client},{self.rect.x},{self.rect.y}".encode())
+                client.send(
+                    bytes(
+                        dumps(
+                            {"id_client": id_client, "x": self.rect.x, "y": self.rect.y}
+                        ),
+                        encoding="utf-8",
+                    )
+                )
 
 
-def recv_data(conn: socket.socket,all_sprites,id_user):
+def recv_data(conn: socket.socket, all_sprites, id_user):
     while True:
         data = conn.recv(1024)
         if data == b"bye":
             break
         if data:
-            print(list(map(int,data.decode().split(","))))
-            id_conn,pox,posy = list(map(int,data.decode().split(",")))
+            data = loads(data.decode("utf-8"))
+            id_conn, pox, posy = data["id_client"], data["x"], data["y"]
             if id_conn != id_user:
                 user = all_sprites[id_conn]
                 user.rect.x = pox
@@ -84,20 +98,33 @@ def recv_data(conn: socket.socket,all_sprites,id_user):
 
 
 # if are impostor set red else random color, and get id_
-def main(client, id_user,room_size):
+def main(client, data):
+    id_user, room_size, is_killer, id_killer = (
+        data["id"],
+        data["room_size"],
+        data["killer"],
+        data["id_killer"],
+    )
     pygame.init()
     signal.signal(signal.SIGINT, partial(signal_handler, client))
+
     clock = pygame.time.Clock()
     window = pygame.display.set_mode((WIDTH, HEIGTH))
+
     all_sprites = []
-    p1 = Player()
+    p1 = Player(is_killer, True)
     for i in range(room_size):
+        # If is different add other players
         if i != id_user:
-            all_sprites.append(Player())
+            # use id_killer to assing red color
+            if i == id_killer:
+                all_sprites.append(Player(True))
+            else:
+                all_sprites.append(Player(False))
         else:
             all_sprites.append(p1)
 
-    threading.Thread(target=recv_data, args=(client,all_sprites,id_user)).start()
+    threading.Thread(target=recv_data, args=(client, all_sprites, id_user)).start()
     while True:
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
@@ -123,6 +150,7 @@ if __name__ == "__main__":
     except ConnectionRefusedError:
         print("Error, can't not connect")
         sys.exit(1)
+
     print("Waiting to server...")
-    id_user,room_size = list(map(int,client.recv(5).decode().split(",")))
-    main(client, id_user,room_size)
+    data = loads(client.recv(1024).decode("utf-8"))
+    main(client, data)
